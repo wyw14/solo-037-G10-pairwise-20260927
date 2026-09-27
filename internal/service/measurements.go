@@ -31,11 +31,12 @@ type MeasurementInput struct {
 }
 
 type MeasurementAnalysis struct {
-	Operation  model.Operation `json:"operation"`
-	Wave       probe.Analysis  `json:"wave"`
-	ForceCount int             `json:"force_count"`
-	ForceMean  float64         `json:"force_mean"`
-	Evaluated  time.Time       `json:"evaluated_at"`
+	Operation   model.Operation     `json:"operation"`
+	Wave        probe.Analysis      `json:"wave"`
+	ForceCount  int                 `json:"force_count"`
+	ForceMean   float64             `json:"force_mean"`
+	Environment EnvironmentCoverage `json:"environment"`
+	Evaluated   time.Time           `json:"evaluated_at"`
 }
 
 type MeasurementArchive struct {
@@ -203,5 +204,23 @@ func (r *Runtime) MeasuredRuns() []MeasuredRun { return r.Measurements.List() }
 func (r *Runtime) MeasuredRun(id model.RunID) (MeasuredRun, bool) { return r.Measurements.Get(id) }
 
 func (r *Runtime) AnalyzeMeasuredRun(id model.RunID) (MeasurementAnalysis, error) {
-	return r.Measurements.Analyze(id)
+	analysis, err := r.Measurements.Analyze(id)
+	if err != nil {
+		return MeasurementAnalysis{}, err
+	}
+	run, exists := r.Measurements.Get(id)
+	if !exists {
+		return MeasurementAnalysis{}, errors.New("run not found")
+	}
+	var from, to time.Time
+	for _, evidence := range run.Evidence {
+		if from.IsZero() || evidence.RecordedAt.Before(from) {
+			from = evidence.RecordedAt
+		}
+		if to.IsZero() || evidence.RecordedAt.After(to) {
+			to = evidence.RecordedAt
+		}
+	}
+	analysis.Environment = r.Environment.Coverage(run.Operation.Section, from, to)
+	return analysis, nil
 }
